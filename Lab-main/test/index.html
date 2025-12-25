@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>選手敏捷度分析系統</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>選手敏捷度分析系統</h1>
+        
+        <!-- 檔案上傳區域 -->
+        <div class="file-upload-section">
+            <h2>檔案上傳</h2>
+            <div class="file-drop-zone" id="fileDropZone">
+                <div class="drop-zone-content">
+                    <p>拖拽檔案到此處或點擊選擇檔案</p>
+                    <p class="file-types">支援格式：CSV, Excel (.xlsx, .xls)</p>
+                    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" multiple style="display: none;">
+                    <button type="button" id="selectFileBtn">選擇檔案</button>
+                </div>
+            </div>
+            <div id="uploadStatus" class="upload-status"></div>
+            <!-- 測試按鈕 -->
+            <button onclick="simpleFileTest()" style="margin-top: 10px; background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">測試檔案上傳</button>
+            <button onclick="addTestData()" style="margin-top: 10px; margin-left: 10px; background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">添加測試資料</button>
+            <button onclick="testUploadFunction()" style="margin-top: 10px; margin-left: 10px; background: #ffc107; color: black; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">測試上傳模組</button>
+            <button onclick="testUserDataFormat()" style="margin-top: 10px; margin-left: 10px; background: #dc3545; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">測試用戶資料格式</button>
+        </div>
+        
+        <!-- 資料輸入表單 -->
+        <div class="input-section">
+            <h2>手動新增資料</h2>
+            <form id="dataForm">
+                <div class="form-row">
+                    <input type="text" id="p_id" placeholder="P_ID" required>
+                    <input type="date" id="date" required>
+                    <input type="number" id="stage" placeholder="Stage" required>
+                    <input type="number" id="time" placeholder="Time" step="0.01" required>
+                    <input type="number" id="vel_mean" placeholder="Vel_mean" step="0.000001" required>
+                    <input type="number" id="acc_mean" placeholder="Acc_mean" step="0.000001" required>
+                </div>
+                <button type="submit">新增資料</button>
+            </form>
+        </div>
+
+        <!-- 資料表格 -->
+        <div class="table-section">
+            <h2>資料列表</h2>
+            
+            <!-- 資料管理控制面板 -->
+            <div class="data-management-panel">
+                <div class="management-section">
+                    <h3>批量操作</h3>
+                    <div class="management-buttons">
+                        <button onclick="toggleSelectAll()" class="btn-info" id="selectAllBtn">
+                            ☑️ 全選
+                        </button>
+                        <button onclick="deleteSelectedData()" class="btn-warning" id="deleteSelectedBtn" disabled>
+                            🗑️ 刪除選中項目
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="management-section">
+                    <h3>條件刪除</h3>
+                    <div class="management-buttons">
+                        <button onclick="deleteByPlayer()" class="btn-warning">
+                            👤 按選手刪除
+                        </button>
+                        <button onclick="deleteByDate()" class="btn-warning">
+                            📅 按日期刪除
+                        </button>
+                        <button onclick="deleteByStage()" class="btn-warning">
+                            🎯 按階段刪除
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="management-section">
+                    <h3>危險操作</h3>
+                    <div class="management-buttons">
+                        <button onclick="clearAllData()" class="btn-danger">
+                            🗑️ 清空所有資料
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>選擇</th>
+                            <th>P_ID</th>
+                            <th>Date</th>
+                            <th>Stage</th>
+                            <th>Time</th>
+                            <th>Vel_mean</th>
+                            <th>Acc_mean</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- 資料會動態載入這裡 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 圖表區域 -->
+        <div class="chart-section">
+            <h2>資料圖表</h2>
+            <div class="chart-controls">
+                <label for="chartType">圖表類型：</label>
+                <select id="chartType">
+                    <option value="time">時間變化</option>
+                    <option value="velocity">速度變化</option>
+                    <option value="acceleration">加速度變化</option>
+                </select>
+                <button onclick="updateCharts()">更新圖表</button>
+            </div>
+            
+            <!-- 選手圖表容器 -->
+            <div class="charts-grid">
+                <div class="chart-wrapper">
+                    <h3 id="player1Title">選手1 數據圖表</h3>
+                    <div class="chart-container">
+                        <canvas id="player1Chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <h3 id="player2Title">選手2 數據圖表</h3>
+                    <div class="chart-container">
+                        <canvas id="player2Chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 圖表匯出 -->
+        <div class="export-section">
+            <h2>📊 圖表匯出</h2>
+            
+            <div class="export-category">
+                <p class="export-description">將當前顯示的圖表匯出為PNG圖片檔案，檔案名包含圖表類型和今天日期</p>
+                <div class="export-buttons">
+                    <button onclick="exportPlayer1ChartToPNG()" class="export-btn chart-export">
+                        🖼️ 匯出選手1圖表PNG
+                    </button>
+                    <button onclick="exportPlayer2ChartToPNG()" class="export-btn chart-export">
+                        🖼️ 匯出選手2圖表PNG
+                    </button>
+                    <button onclick="exportAllChartsToPNG()" class="export-btn chart-export">
+                         🖼️ 匯出合併圖表PNG
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script src="upload.js"></script>
+</body>
+</html>
