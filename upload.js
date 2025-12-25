@@ -35,80 +35,77 @@ class FileUploadHandler {
             const bVel = typeof b.avg_vel === 'number' ? b.avg_vel : null;
             const aAcc = typeof a.avg_acc === 'number' ? a.avg_acc : null;
 
-            const parts = [];
-
-            // 總評
-            let overall = '';
-            if (aTime !== null && bTime !== null) {
-                const diff = (bTime - aTime);
-                if (Math.abs(diff) < 0.02) overall = `${idA || '選手A'} 與 ${idB || '選手B'} 整體表現相近，秒數差異不大。`;
-                else if (diff > 0) overall = `${idA || '選手A'} 整體略優於 ${idB || '選手B'}（平均較快）。`;
-                else overall = `${idB || '選手B'} 整體略優於 ${idA || '選手A'}（平均較快）。`;
-            } else {
-                overall = '無足夠資料做整體秒數比較，建議確認輸入資料。';
-            }
-            parts.push(overall);
-
-            // 關鍵差異 - 取三項指標差異說明
-            const diffs = [];
-            if (aTime !== null && bTime !== null) diffs.push(`平均時間：${(aTime||0).toFixed(2)} vs ${(bTime||0).toFixed(2)}`);
-            if (aVel !== null && bVel !== null) diffs.push(`平均速度：${(aVel||0).toFixed(3)} vs ${(bVel||0).toFixed(3)}`);
-            if (aAcc !== null && bAcc !== null) diffs.push(`平均加速度：${(aAcc||0).toFixed(3)} vs ${(bAcc||0).toFixed(3)}`);
-            if (diffs.length > 0) parts.push(`關鍵指標比較：${diffs.join('；')}。`);
-
-            // per-stage 比較，如果有提供 perStageStats
-            const stageNotes = [];
             const pa = metaA && metaA.perStageStats ? metaA.perStageStats : {};
             const pb = metaB && metaB.perStageStats ? metaB.perStageStats : {};
+
+            // Summary
+            let summary = '';
+            if (aTime !== null && bTime !== null) {
+                const diff = (bTime - aTime);
+                const absd = Math.abs(diff);
+                if (absd < 0.05) summary = `${idA || '選手A'} 與 ${idB || '選手B'} 表現相近（平均時間 ${aTime.toFixed(2)}s vs ${bTime.toFixed(2)}s）。`;
+                else if (diff > 0) summary = `${idA || '選手A'} 整體較快 ${absd.toFixed(2)}s（${aTime.toFixed(2)}s vs ${bTime.toFixed(2)}s）。`;
+                else summary = `${idB || '選手B'} 整體較快 ${absd.toFixed(2)}s（${bTime.toFixed(2)}s vs ${aTime.toFixed(2)}s）。`;
+            } else {
+                summary = '缺乏完整平均時間資料，僅能基於可用指標提供建議。';
+            }
+
+            // Key comparisons
+            const keyLines = [];
+            if (aTime !== null && bTime !== null) keyLines.push(`平均時間：${aTime.toFixed(2)}s / ${bTime.toFixed(2)}s`);
+            if (aVel !== null && bVel !== null) keyLines.push(`平均速度：${aVel.toFixed(3)} / ${bVel.toFixed(3)}`);
+            if (aAcc !== null && bAcc !== null) keyLines.push(`平均加速度：${aAcc.toFixed(3)} / ${bAcc.toFixed(3)}`);
+
+            // Per-stage highlights (which stages show meaningful gaps)
+            const stageHighlights = [];
             const stages = Array.from(new Set([...Object.keys(pa), ...Object.keys(pb)])).sort((x,y)=>Number(x)-Number(y));
             stages.forEach(s => {
-                const sa = pa[s] ? pa[s].avg_time : null;
-                const sb = pb[s] ? pb[s].avg_time : null;
+                const sa = pa[s] && typeof pa[s].avg_time === 'number' ? pa[s].avg_time : null;
+                const sb = pb[s] && typeof pb[s].avg_time === 'number' ? pb[s].avg_time : null;
                 if (sa != null && sb != null) {
-                    const d = sb - sa;
-                    if (Math.abs(d) > 0.05) {
-                        const better = d > 0 ? idA : idB;
-                        stageNotes.push(`第 ${s} 階段：${(sa).toFixed(2)}s vs ${(sb).toFixed(2)}s，較佳為 ${better}。`);
+                    const d = sb - sa; // positive -> a faster
+                    if (Math.abs(d) > 0.06) {
+                        const better = d > 0 ? (idA || '選手A') : (idB || '選手B');
+                        stageHighlights.push(`第${s}段：${sa.toFixed(2)}s vs ${sb.toFixed(2)}s，較佳：${better}`);
                     }
                 }
             });
-            if (stageNotes.length > 0) parts.push(`分段差異：${stageNotes.slice(0,4).join(' ')}。`);
 
-            // 建議（更具體、依優先順序）
-            const suggestions = [];
-            // prioritize time improvement
+            // Prioritized recommendations
+            const recs = [];
+            // short-term: address start/accel if time gap exists
             if (aTime !== null && bTime !== null) {
-                const faster = (aTime < bTime) ? idA : idB;
-                suggestions.push(`${faster} 在總秒數較優，另一方可參考其起跑與加速策略。`);
+                const fasterId = aTime < bTime ? (idA || '選手A') : (idB || '選手B');
+                const slowerId = aTime < bTime ? (idB || '選手B') : (idA || '選手A');
+                recs.push(`短期優先：${slowerId} 可參考 ${fasterId} 的起跑與前段加速策略，重點練習起跑爆發 (6-10m 短衝)。`);
             }
-            // velocity/acceleration remediation
+            // velocity/accel specific
             if (aVel !== null && bVel !== null) {
-                if (aVel < bVel - 0.02) suggestions.push(`${idA || '選手A'} 速度顯著較低，優先加入短衝和技術啟動訓練。`);
-                else if (bVel < aVel - 0.02) suggestions.push(`${idB || '選手B'} 速度顯著較低，優先加入短衝和技術啟動訓練。`);
+                if (aVel + 0.02 < bVel) recs.push(`${idA || '選手A'} 速度顯著較低，建議加入短距離技術與速度訓練。`);
+                else if (bVel + 0.02 < aVel) recs.push(`${idB || '選手B'} 速度顯著較低，建議加入短距離技術與速度訓練。`);
             }
             if (aAcc !== null && bAcc !== null) {
-                if (aAcc < bAcc - 0.1) suggestions.push(`${idA || '選手A'} 加速度較弱，建議力量與起步訓練為優先。`);
-                else if (bAcc < aAcc - 0.1) suggestions.push(`${idB || '選手B'} 加速度較弱，建議力量與起步訓練為優先。`);
+                if (aAcc + 0.08 < bAcc) recs.push(`${idA || '選手A'} 加速度較弱，優先做力量/起步訓練。`);
+                else if (bAcc + 0.08 < aAcc) recs.push(`${idB || '選手B'} 加速度較弱，優先做力量/起步訓練。`);
             }
+            if (stageHighlights.length > 0) recs.push(`針對性：以分段為單位做重點訓練，優先處理以下差距明顯的階段：${stageHighlights.slice(0,3).join('；')}`);
 
-            if (suggestions.length === 0) suggestions.push('雙方差異不大，建議互相觀摩並針對分段差異做短期集中訓練。');
-
-            // Concrete, short drills (1-3)
-            const combinedDrills = [];
-            combinedDrills.push('短距離衝刺 6-10 次，休息 60-90s，著重起步爆發');
-            combinedDrills.push('分段重複：針對最差階段做 4-6 組的區段練習');
-            combinedDrills.push('力量訓練：深蹲/硬舉 3-4 組 x 4-6 次，提升爆發力');
-
-            parts.push(`訓練建議（優先順序）：${suggestions.slice(0,3).join('；')}`);
-            parts.push(`推薦訓練動作：${combinedDrills.slice(0,3).join('；')}`);
-
-            // assemble with some variability
-            const templates = [
-                (a)=>a.join('\n\n'),
-                (a)=>`綜合評估：\n${a.join('\n')}`
+            // Concrete drills
+            const drills = [
+                '短距離爆發：6-10m x6 衝刺，專注起步與姿勢，休息 60-90s',
+                '分段重複：選取最慢的 1-2 段，做 4-6 組區段重複',
+                '力量訓練：深蹲/硬舉 3-4 組 x 4-6 次，提升爆發力'
             ];
-            const tpl = templates[Math.floor(Math.random() * templates.length)];
-            return tpl(parts);
+
+            // Assemble output
+            const out = [];
+            out.push(`綜合比較總結： ${summary}`);
+            if (keyLines.length) out.push(`關鍵指標：${keyLines.join('；')}`);
+            if (stageHighlights.length) out.push(`分段重點：${stageHighlights.slice(0,4).join('；')}`);
+            if (recs.length) out.push(`優先建議：\n- ${recs.join('\n- ')}`);
+            out.push(`推薦練習：\n- ${drills.join('\n- ')}`);
+
+            return out.join('\n\n');
         } catch (e) {
             console.warn('generateCombinedAnalysis error', e);
             return '無法產生綜合分析。';
@@ -881,7 +878,27 @@ class FileUploadHandler {
     // 執行 AI 分析並顯示結果，會儲存歷史與提供下載
     performAIAnalysis(targetKey) {
         const outputEl = document.getElementById('aiAnalysisOutput');
-        if (outputEl) { outputEl.style.display = 'block'; outputEl.textContent = '正在分析...'; }
+        if (outputEl) {
+            outputEl.style.display = 'block';
+            // start animated "AI 分析中" with moving dots
+            let dots = 0;
+            outputEl.textContent = 'AI 分析中';
+            if (this._aiAnalysisInterval) {
+                clearInterval(this._aiAnalysisInterval);
+                this._aiAnalysisInterval = null;
+            }
+            this._aiAnalysisInterval = setInterval(() => {
+                try {
+                    dots = (dots + 1) % 4; // 0..3
+                    outputEl.textContent = 'AI 分析中' + '.'.repeat(dots);
+                } catch (e) { /* ignore */ }
+            }, 450);
+            // 若有尚未到時的最終化計時器，先清除（避免上一次分析仍會顯示結果）
+            if (this._aiFinalTimeout) {
+                clearTimeout(this._aiFinalTimeout);
+                this._aiFinalTimeout = null;
+            }
+        }
 
         // detect external AI settings
         const useExternal = document.getElementById('aiUseExternal') && document.getElementById('aiUseExternal').checked;
@@ -959,10 +976,41 @@ class FileUploadHandler {
 
         // 儲存並顯示 (如果需呼叫外部 AI，特別處理綜合)
         const finalizeAndShow = (finalResults) => {
+            // 停止分析中動畫並在顯示前加入兩個稍微隨機化的 AI 評語，並標示兩個 AI 成功
+            try {
+                if (this._aiAnalysisInterval) {
+                    clearInterval(this._aiAnalysisInterval);
+                    this._aiAnalysisInterval = null;
+                }
+            } catch (e) { console.warn('清除分析動畫失敗', e); }
+
+            // 在顯示前加入兩個稍微隨機化的 AI 評語，並標示兩個 AI 成功
+            try {
+                const aiRemarks = this.generateTwoRandomAiRemarks(finalResults['選手一'], finalResults['選手二']);
+                if (aiRemarks && Array.isArray(aiRemarks)) {
+                    finalResults['AI一'] = { meta: null, suggestions: [aiRemarks[0]] };
+                    // 不再加入 AI二（依使用者要求）
+                }
+                // 確保不會保存或顯示任何系統狀態鍵（例如舊的 '系統狀態'）
+                if (finalResults['系統狀態']) delete finalResults['系統狀態'];
+            } catch (e) {
+                console.warn('加入 AI 評語時發生錯誤:', e);
+            }
+
             this._lastAnalysisResults = finalResults;
             this.saveAnalysisHistory(finalResults);
             const reportHtml = this.formatAISuggestionsReportCompact(finalResults);
             if (outputEl) outputEl.innerHTML = reportHtml; else console.log(reportHtml);
+        };
+
+        // Helper to schedule finalization after a random 5-10s "thinking" delay
+        const scheduleFinalization = (finalResults) => {
+            const min = 5000, max = 10000;
+            const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+            this._aiFinalTimeout = setTimeout(() => {
+                try { finalizeAndShow(finalResults); }
+                finally { this._aiFinalTimeout = null; }
+            }, delay);
         };
 
         // If external AI is enabled and combined requested, call external then finalize
@@ -1005,14 +1053,14 @@ class FileUploadHandler {
                         }
                     }
                 } finally {
-                    finalizeAndShow(results);
+                    scheduleFinalization(results);
                 }
             })();
             return;
         }
 
         // otherwise finalize immediately
-        finalizeAndShow(results);
+        scheduleFinalization(results);
     }
 
     // 從資料快速建構訓練 meta（簡易）
@@ -1155,6 +1203,11 @@ class FileUploadHandler {
                 else parts.push(`${key} 建議： ${comment}`);
             }
         });
+
+        // 顯示其它非標準的欄位（優先顯示 AI一，並忽略任何系統性鍵）
+        if (results['AI一'] && Array.isArray(results['AI一'].suggestions)) {
+            results['AI一'].suggestions.forEach(s => parts.push(`AI一： ${s}`));
+        }
 
         // Convert parts to HTML paragraphs and highlight numeric/key phrases
         const esc = (s) => String(s)
@@ -1353,6 +1406,36 @@ class FileUploadHandler {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
+    }
+
+    // 產生兩個較隨機化的 AI 評語（用於同時顯示兩個 AI 的輸出）
+    generateTwoRandomAiRemarks(p1Result, p2Result) {
+        // 只針對選手訓練狀況產生隨機化短語，不評價系統
+        const templates = [
+            (id) => `${id} 訓練狀況穩定，建議維持目前訓練並針對分段弱點做短期強化。`,
+            (id) => `${id} 起跑與加速表現需要加強，建議加入阻力起步與短距離爆發訓練。`,
+            (id) => `${id} 平均速度表現良好，但分段一致性不足，建議分段重複練習。`,
+            (id) => `${id} 加速度略低，優先進行力量與起步技術訓練以提升爆發力。`,
+            (id) => `${id} 秒數有小幅進步空間，建議在每次訓練後記錄秒數以追蹤改善。`,
+            (id) => `${id} 表現波動，建議做更多短距離穩定性訓練以提升一致性。`
+        ];
+
+        const pickTemplate = (arr) => arr[Math.floor(Math.random() * arr.length)];
+        const formatId = (id) => {
+            if (!id) return '選手X';
+            const s = String(id).trim();
+            // if purely numeric or P-prefixed numeric, show as 選手NNN
+            const m = s.match(/^P?(\d+)$/i);
+            if (m) return `選手${m[1]}`;
+            return s;
+        };
+
+        const p1Label = formatId((p1Result && p1Result.playerId) ? p1Result.playerId : (p2Result && p2Result.playerId ? p2Result.playerId : null));
+        const p2Label = formatId((p2Result && p2Result.playerId) ? p2Result.playerId : (p1Result && p1Result.playerId ? p1Result.playerId : null));
+
+        const remarkA = pickTemplate(templates)(p1Label);
+        const remarkB = pickTemplate(templates)(p2Label);
+        return [remarkA, remarkB];
     }
 
     // 儲存分析歷史到 localStorage（保留最新 20 筆）
